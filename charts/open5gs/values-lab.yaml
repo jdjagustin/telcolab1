@@ -1,28 +1,14 @@
 mongodb:
   enabled: true
   image:
-    repository: mongo
-    tag: "4.4"
+    repository: docker.io/bitnami/mongodb
+    tag: "4.4.15"
     pullPolicy: IfNotPresent
 
   auth:
     enabled: false
 
   persistence:
-    enabled: false
-
-  resources:
-    limits:
-      cpu: 200m
-      memory: 256Mi
-    requests:
-      cpu: 100m
-      memory: 128Mi
-
-  livenessProbe:
-    enabled: false
-
-  readinessProbe:
     enabled: false
 
 hss:
