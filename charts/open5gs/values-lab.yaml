@@ -2,7 +2,7 @@ mongodb:
   enabled: true
   image:
     repository: docker.io/bitnami/mongodb
-    tag: "4.4.15"
+    tag: "4.4"
     pullPolicy: IfNotPresent
 
   auth:
