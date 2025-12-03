@@ -1,3 +1,30 @@
+mongodb:
+  enabled: true
+  image:
+    repository: mongo
+    tag: "4.4"
+    pullPolicy: IfNotPresent
+
+  auth:
+    enabled: false
+
+  persistence:
+    enabled: false
+
+  resources:
+    limits:
+      cpu: 200m
+      memory: 256Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  livenessProbe:
+    enabled: false
+
+  readinessProbe:
+    enabled: false
+
 hss:
   enabled: false
 
@@ -25,4 +52,4 @@ webui:
 populate:
   enabled: true
   initCommands:
-  - open5gs-dbctl add_ue_with_slice 999700000000001 491BB1C6E1179AED538028AE7AD525B3 3B7FB099B3A6D16873B33F023B1679E9 internet 1 ffffff
+    - open5gs-dbctl add_ue_with_slice 999700000000001 491BB1C6E1179AED538028AE7AD525B3 3B7FB099B3A6D16873B33F023B1679E9 internet 1 ffffff
