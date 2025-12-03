@@ -1,8 +1,9 @@
 mongodb:
   enabled: true
   image:
-    repository: docker.io/bitnami/mongodb
-    tag: "4.4"
+    # Ojo: repository sin "docker.io/" al inicio
+    repository: bitnami/mongodb
+    tag: "4.4.15-debian-10-r8"
     pullPolicy: IfNotPresent
 
   auth:
