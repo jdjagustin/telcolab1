@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: telcolab1
+  namespace: argocd
+spec:
+  description: TelcoLab1 - Open5GS GitOps Project
+  sourceRepos:
+    - https://github.com/jdjagustin/telcolab1.git
+  destinations:
+    - namespace: open5gs
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  orphanedResources:
+    warn: true

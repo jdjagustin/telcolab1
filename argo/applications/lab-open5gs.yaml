@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-open5gs
+  namespace: argocd
+spec:
+  project: telcolab1
+
+  source:
+    repoURL: https://github.com/jdjagustin/telcolab1.git
+    targetRevision: main
+    path: charts/open5gs
+    helm:
+      valueFiles:
+        - values-lab.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: open5gs
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
