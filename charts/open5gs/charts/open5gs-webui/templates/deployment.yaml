@@ -64,7 +64,7 @@ spec:
       {{- end }}
       initContainers:
         - name: init
-          image: bitnami/mongodb:4.4.15-debian-10-r8.15-debian-10-r8
+          image: mongo:4.4.29
           env:
           - name: DB_URI
             {{- if .Values.dbURI }}
