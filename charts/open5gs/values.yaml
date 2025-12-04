@@ -71,3 +71,15 @@ udr:
   enabled: true
   mongodb:
     enabled: false
+
+webui:
+  image:
+    registry: docker.io
+    repository: gradiant/open5gs-webui
+    tag: 2.7.0
+    pullPolicy: IfNotPresent
+  initImage:
+    registry: docker.io
+    repository: bitnami/mongodb
+    tag: 4.4
+    pullPolicy: IfNotPresent
