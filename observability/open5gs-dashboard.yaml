@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-open5gs-health
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app: grafana
+    telcolab: open5gs
+data:
+  open5gs-health.json: |
+    {
+      "id": null,
+      "uid": "open5gs-health",
+      "title": "TelcoLab - Open5GS Health",
+      "tags": ["open5gs","telcolab"],
+      "timezone": "browser",
+      "schemaVersion": 36,
+      "version": 2,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Open5GS Pods Ready",
+          "id": 1,
+          "datasource": {"type": "prometheus", "uid": null},
+          "targets": [
+            { "expr": "sum(kube_pod_status_ready{namespace=\"open5gs\",condition=\"true\"})", "refId": "A" }
+          ],
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": { "defaults": { "unit": "none","decimals": 0 } },
+          "gridPos": { "h": 4,"w": 6,"x": 0,"y": 0 }
+        },
+        {
+          "type": "stat",
+          "title": "Total Restarts (open5gs)",
+          "id": 2,
+          "datasource": {"type": "prometheus", "uid": null},
+          "targets": [
+            { "expr": "sum(kube_pod_container_status_restarts_total{namespace=\"open5gs\"})", "refId": "A" }
+          ],
+          "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+          "fieldConfig": { "defaults": { "unit": "none","decimals": 0 } },
+          "gridPos": { "h": 4,"w": 6,"x": 6,"y": 0 }
+        },
+        {
+          "type": "table",
+          "title": "Restarts por Pod (open5gs)",
+          "id": 5,
+          "datasource": {"type": "prometheus","uid": null},
+          "targets": [
+            {
+              "expr": "sum by (pod) (kube_pod_container_status_restarts_total{namespace=\"open5gs\"})",
+              "refId": "A"
+            }
+          ],
+          "gridPos": { "h": 8,"w": 12,"x": 0,"y": 4 },
+          "transformations": [
+            { "id": "organize", "options": { "excludeByName": { "__name__": true }, "indexByName": {} } }
+          ]
+        },
+        {
+          "type": "graph",
+          "title": "CPU Usage (open5gs)",
+          "id": 3,
+          "datasource": {"type": "prometheus", "uid": null},
+          "targets": [
+            {
+              "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=\"open5gs\",image!=\"\"}[5m]))",
+              "refId": "A",
+              "legendFormat": "CPU"
+            }
+          ],
+          "gridPos": { "h": 8,"w": 12,"x": 0,"y": 12 },
+          "lines": true
+        },
+        {
+          "type": "graph",
+          "title": "Memory Usage (open5gs, MiB)",
+          "id": 4,
+          "datasource": {"type": "prometheus", "uid": null},
+          "targets": [
+            {
+              "expr": "sum(container_memory_working_set_bytes{namespace=\"open5gs\",image!=\"\"}) / 1024^2",
+              "refId": "A",
+              "legendFormat": "MiB"
+            }
+          ],
+          "gridPos": { "h": 8,"w": 12,"x": 0,"y": 20 },
+          "lines": true
+        },
+        {
+          "type": "graph",
+          "title": "CPU por Pod (open5gs)",
+          "id": 6,
+          "datasource": {"type": "prometheus","uid": null},
+          "targets": [
+            {
+              "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"open5gs\",image!=\"\"}[5m]))",
+              "refId": "A",
+              "legendFormat": "{{pod}}"
+            }
+          ],
+          "gridPos": { "h": 8,"w": 12,"x": 0,"y": 28 },
+          "lines": true
+        },
+        {
+          "type": "graph",
+          "title": "Memoria por Pod (open5gs, MiB)",
+          "id": 7,
+          "datasource": {"type": "prometheus","uid": null},
+          "targets": [
+            {
+              "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"open5gs\",image!=\"\"}) / 1024^2",
+              "refId": "A",
+              "legendFormat": "{{pod}}"
+            }
+          ],
+          "gridPos": { "h": 8,"w": 12,"x": 0,"y": 36 },
+          "lines": true
+        },
+        {
+          "type": "graph",
+          "title": "MongoDB Connections",
+          "id": 8,
+          "datasource": {"type": "prometheus","uid": null},
+          "targets": [
+            {
+              "expr": "mongodb_connections",
+              "refId": "A",
+              "legendFormat": "{{instance}}"
+            }
+          ],
+          "gridPos": { "h": 8,"w": 12,"x": 0,"y": 44 },
+          "lines": true
+        }
+      ],
+      "annotations": { "list": [] }
+    }

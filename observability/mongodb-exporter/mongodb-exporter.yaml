@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-exporter
+  namespace: open5gs
+  labels:
+    app: mongodb-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb-exporter
+  template:
+    metadata:
+      labels:
+        app: mongodb-exporter
+    spec:
+      containers:
+        - name: mongodb-exporter
+          image: bitnami/mongodb-exporter:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "--collect-all"
+          env:
+            - name: MONGODB_URI
+              value: "mongodb://lab-open5gs-mongodb.open5gs.svc.cluster.local:27017"
+          ports:
+            - name: metrics
+              containerPort: 9216
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-exporter
+  namespace: open5gs
+  labels:
+    app: mongodb-exporter
+spec:
+  type: ClusterIP
+  selector:
+    app: mongodb-exporter
+  ports:
+    - name: metrics
+      port: 9216
+      targetPort: metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: mongodb-exporter
+  namespace: open5gs
+  labels:
+    app: mongodb-exporter
+    release: kube-prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app: mongodb-exporter
+  namespaceSelector:
+    matchNames:
+      - open5gs
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics

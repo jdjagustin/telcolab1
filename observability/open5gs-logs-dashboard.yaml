@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-open5gs-logs
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+    app: grafana
+    telcolab: open5gs
+data:
+  open5gs-logs.json: |
+    {
+      "id": null,
+      "uid": "open5gs-logs",
+      "title": "TelcoLab - Open5GS Log Insights",
+      "tags": ["open5gs","logs","telcolab"],
+      "timezone": "browser",
+      "schemaVersion": 36,
+      "version": 1,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Volumen de logs (open5gs)",
+          "id": 1,
+          "datasource": { "type": "loki", "uid": null },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (namespace) (count_over_time({namespace=\"open5gs\"}[$__interval]))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": { "unit": "logs" },
+            "overrides": []
+          },
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 }
+        },
+        {
+          "type": "table",
+          "title": "Top pods por volumen de logs (últimos 10 min)",
+          "id": 2,
+          "datasource": { "type": "loki", "uid": null },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (count_over_time({namespace=\"open5gs\"}[10m]))"
+            }
+          ],
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "fieldConfig": {
+            "defaults": { "unit": "logs" },
+            "overrides": []
+          }
+        },
+        {
+          "type": "logs",
+          "title": "Logs detallados (open5gs)",
+          "id": 3,
+          "datasource": { "type": "loki", "uid": null },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "{namespace=\"open5gs\"}"
+            }
+          ],
+          "options": {
+            "showLabels": true,
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending"
+          },
+          "gridPos": { "h": 16, "w": 12, "x": 0, "y": 16 }
+        }
+      ],
+      "annotations": { "list": [] }
+    }
