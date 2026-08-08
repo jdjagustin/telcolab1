@@ -5,7 +5,7 @@ enb:
   tac: '0001'
   resources:
     requests:
-      cpu: 200m
+      cpu: 150m
       memory: 256Mi
     limits:
       cpu: 500m
@@ -16,7 +16,7 @@ ue:
   imsi: '999700000000002'
   resources:
     requests:
-      cpu: 200m
+      cpu: 150m
       memory: 256Mi
     limits:
       cpu: 500m
