@@ -1,0 +1,18 @@
+annotations:
+  artifacthub.io/category: networking
+apiVersion: v1
+appVersion: 22.04.1
+description: 'SRSLte enodeb + ue. '
+home: https://github.com/Gradiant/charts
+icon: https://docs.srsran.com/en/latest/_static/logo.png
+keywords:
+- network
+- lte
+- enodeb
+maintainers:
+- email: cgiraldo@gradiant.org
+  name: cgiraldo
+name: srs-lte
+sources:
+- https://github.com/srsLTE/srsLTE
+version: 0.1.3
