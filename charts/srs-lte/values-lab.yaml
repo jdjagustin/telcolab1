@@ -21,4 +21,7 @@ ue:
     limits:
       cpu: 500m
       memory: 512Mi
+nodeSelector:
+  avx2: "true"
+
 

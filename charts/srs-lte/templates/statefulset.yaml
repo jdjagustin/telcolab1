@@ -18,6 +18,10 @@ spec:
         app.kubernetes.io/instance: {{ .Release.Name | quote }}
     spec:
 {{ include "srslte.imagePullSecrets" . | indent 6 }}
+      {{- if .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml .Values.nodeSelector | indent 8 }}
+      {{- end }}
       containers:
       - name: enb
         image: {{ template "srslte.image" . }}
