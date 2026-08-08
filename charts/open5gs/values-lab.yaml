@@ -30,7 +30,7 @@ pcrf:
 smf:
   config:
     pcrf:
-      enabled: false
+      enabled: true
   resources:
     requests:
       cpu: 50m
