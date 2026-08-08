@@ -1,0 +1,24 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-srs-lte
+  namespace: argocd
+spec:
+  project: telcolab1
+  source:
+    repoURL: https://github.com/jdjagustin/telcolab1.git
+    targetRevision: main
+    path: charts/srs-lte
+    helm:
+      valueFiles:
+        - values-lab.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: open5gs
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
