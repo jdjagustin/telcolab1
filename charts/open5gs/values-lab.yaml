@@ -1,11 +1,32 @@
 mongodb:
   enabled: false
 hss:
-  enabled: false
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 mme:
-  enabled: false
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
 pcrf:
-  enabled: false
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 smf:
   config:
     pcrf:
@@ -18,9 +39,23 @@ smf:
       cpu: 200m
       memory: 128Mi
 sgwc:
-  enabled: false
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
 sgwu:
-  enabled: false
+  enabled: true
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 300m
+      memory: 256Mi
 webui:
   ingress:
     enabled: false
