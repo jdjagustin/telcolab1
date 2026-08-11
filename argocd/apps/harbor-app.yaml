@@ -1,0 +1,182 @@
+# harbor_argocd_app.yaml
+#
+# Application de ArgoCD para Harbor — actualizado al patrón que ya usas en
+# kube-prometheus-stack / loki-stack (confirmado en tu screenshot de ArgoCD del
+# 2026-08-11): `source` simple apuntando directo al Helm repo externo, sin
+# multi-source. Project `default`, igual que esas dos (Harbor es tooling de
+# plataforma, no parte del stack RAN/Core que vive bajo el project `telcolab1`
+# con lab-open5gs/lab-srs-lte — muévelo a `telcolab1` si prefieres agruparlo ahí).
+#
+# Placeholders ya resueltos con datos reales de tu cluster (2026-08-11):
+#   - CHART_VERSION   = 1.19.2  (confirmado 2026-08-11 vía `helm search repo harbor/harbor
+#                        --versions` — Harbor OSS v2.15.2, un patch arriba de la 1.19.1
+#                        que se había puesto originalmente)
+#   - NODE_HOSTNAME   = cloudlab-1  (control-plane, `kubectl get nodes -o wide`)
+#   - STORAGE_CLASS   = local-path  (única storage class del cluster, la default)
+#   - HARBOR_HOSTNAME = harbor.lab.local  (placeholder editable — cámbialo aquí Y en
+#                        el HARBOR_HOSTNAME que le pases a harbor_generate_ca.sh, deben
+#                        matchear exacto o el cert no va a validar)
+#
+# Nota aparte, no bloqueante para esto: tus dos nodos están en versiones distintas de
+# k3s (cloudlab-1 v1.33.6+k3s1, cloudspartan v1.36.3+k3s1) — es el pendiente #4 del
+# kickoff. No afecta el deploy de Harbor, pero ya que estás mirando `kubectl get nodes`
+# lo dejo anotado.
+#
+# Sigue el flujo que ya usas: este archivo va a la rama `dev`, PR, review, merge.
+# No lo apliques con `kubectl apply` directo a mano — que pase por ArgoCD como el resto.
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: lab-harbor
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://helm.goharbor.io
+    chart: harbor
+    targetRevision: "1.19.2"
+    helm:
+      valuesObject:
+        expose:
+          type: clusterIP
+          tls:
+            enabled: true
+            certSource: secret
+            secret:
+              secretName: harbor-tls
+
+        externalURL: https://harbor.lab.local
+
+        # NO pongas el password aquí en texto plano (mismo incidente que el password
+        # de Grafana commiteado — ver incidente_configmap_subpath_2026-08-09.md).
+        existingSecretAdminPassword: harbor-admin-secret
+        existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+        existingSecretSecretKey: harbor-core-secret-key
+
+        persistence:
+          enabled: true
+          resourcePolicy: "keep"
+          persistentVolumeClaim:
+            registry:
+              storageClass: "local-path"
+              accessMode: ReadWriteOnce
+              size: 20Gi
+            jobservice:
+              jobLog:
+                storageClass: "local-path"
+                accessMode: ReadWriteOnce
+                size: 1Gi
+            database:
+              storageClass: "local-path"
+              accessMode: ReadWriteOnce
+              size: 2Gi
+            redis:
+              storageClass: "local-path"
+              accessMode: ReadWriteOnce
+              size: 1Gi
+            trivy:
+              storageClass: "local-path"
+              accessMode: ReadWriteOnce
+              size: 5Gi
+
+        # Pin a cloudlab-1: confirmado el 2026-08-11 (vía `helm show values` +
+        # `awk` sobre el default de la 1.19.2) que este chart NO tiene un
+        # nodeSelector global — son 9 componentes independientes (nginx, portal,
+        # core, jobservice, registry, trivy, database, redis, exporter), cada uno
+        # con su propio nodeSelector. Hay que ponerlo en cada uno, no una sola vez.
+        #
+        # CPU requests recortados el mismo día tras revisar `kubectl describe node
+        # cloudlab-1`: el nodo ya estaba en 80% de CPU asignable (~390m libres de
+        # ~2000m allocatable) antes de agregar Harbor. Memoria sobraba (16% de uso),
+        # así que solo se bajó CPU request, no memoria ni los límites.
+        nginx:
+          nodeSelector:
+            kubernetes.io/hostname: cloudlab-1
+
+        portal:
+          nodeSelector:
+            kubernetes.io/hostname: cloudlab-1
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { cpu: 200m, memory: 256Mi }
+
+        core:
+          nodeSelector:
+            kubernetes.io/hostname: cloudlab-1
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+
+        jobservice:
+          nodeSelector:
+            kubernetes.io/hostname: cloudlab-1
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+
+        registry:
+          nodeSelector:
+            kubernetes.io/hostname: cloudlab-1
+          resources:
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+
+        trivy:
+          enabled: true
+          nodeSelector:
+            kubernetes.io/hostname: cloudlab-1
+          resources:
+            requests: { cpu: 100m, memory: 512Mi }
+            limits: { cpu: "1", memory: 1Gi }
+
+        database:
+          internal:
+            nodeSelector:
+              kubernetes.io/hostname: cloudlab-1
+            resources:
+              requests: { cpu: 50m, memory: 256Mi }
+              limits: { cpu: 500m, memory: 512Mi }
+
+        redis:
+          internal:
+            nodeSelector:
+              kubernetes.io/hostname: cloudlab-1
+            resources:
+              requests: { cpu: 20m, memory: 128Mi }
+              limits: { cpu: 200m, memory: 256Mi }
+
+        exporter:
+          nodeSelector:
+            kubernetes.io/hostname: cloudlab-1
+
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: harbor
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      limit: 3
+      backoff:
+        duration: 30s
+        factor: 2
+        maxDuration: 5m
+
+# Nota: los Secrets (harbor-tls, harbor-admin-secret, harbor-core-secret-key) NO van
+# en este Application ni en el repo — se crean a mano en el cluster con los comandos
+# que imprime harbor_generate_ca.sh, antes de que ArgoCD sincronice esto por primera vez.
+# Si ArgoCD sincroniza antes de que existan los Secrets, los pods de Harbor van a
+# quedar en Pending/Error hasta que los crees — no es un bug, solo orden de pasos.
