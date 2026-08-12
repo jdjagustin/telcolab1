@@ -1,3 +1,7 @@
+image:
+  registry: harbor.lab.local
+  repository: library/srsran
+  tag: "22_04_1"
 enb:
   mme: lab-open5gs-mme-s1ap
   mcc: '999'
