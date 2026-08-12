@@ -85,28 +85,30 @@ spec:
 
         # Pin a cloudlab-1: confirmado el 2026-08-11 (vía `helm show values` +
         # `awk` sobre el default de la 1.19.2) que este chart NO tiene un
-        # nodeSelector global — son 9 componentes independientes (nginx, portal,
-        # core, jobservice, registry, trivy, database, redis, exporter), cada uno
-        # con su propio nodeSelector. Hay que ponerlo en cada uno, no una sola vez.
+        # nodeSelector global — son 9 componentes independientes, cada uno con
+        # su propio nodeSelector.
         #
-        # CPU requests recortados el mismo día tras revisar `kubectl describe node
+        # Corrección 2026-08-12: originalmente se fijaron los 9 en cloudlab-1,
+        # pero eso saturó el nodo (95% de CPU reservado, causando "Readiness
+        # probe failed: context deadline exceeded" en nginx bajo carga real del
+        # primer escaneo de Trivy — ver evento en kubectl get events). Solo los
+        # componentes con PVC de local-path (registry, jobservice, trivy,
+        # database, redis) REALMENTE necesitan estar en cloudlab-1 — el resto
+        # (nginx, portal, core, exporter) no tiene estado y puede flotar,
+        # aliviando presión hacia cloudspartan (que estaba solo al 8% de CPU).
+        #
+        # CPU requests recortados el 2026-08-11 tras revisar `kubectl describe node
         # cloudlab-1`: el nodo ya estaba en 80% de CPU asignable (~390m libres de
         # ~2000m allocatable) antes de agregar Harbor. Memoria sobraba (16% de uso),
         # así que solo se bajó CPU request, no memoria ni los límites.
-        nginx:
-          nodeSelector:
-            kubernetes.io/hostname: cloudlab-1
+        nginx: {}
 
         portal:
-          nodeSelector:
-            kubernetes.io/hostname: cloudlab-1
           resources:
             requests: { cpu: 20m, memory: 128Mi }
             limits: { cpu: 200m, memory: 256Mi }
 
         core:
-          nodeSelector:
-            kubernetes.io/hostname: cloudlab-1
           resources:
             requests: { cpu: 50m, memory: 256Mi }
             limits: { cpu: 500m, memory: 512Mi }
@@ -149,9 +151,7 @@ spec:
               requests: { cpu: 20m, memory: 128Mi }
               limits: { cpu: 200m, memory: 256Mi }
 
-        exporter:
-          nodeSelector:
-            kubernetes.io/hostname: cloudlab-1
+        exporter: {}
 
         metrics:
           enabled: true
