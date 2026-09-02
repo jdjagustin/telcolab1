@@ -41,9 +41,7 @@ The free tier is a deliberate choice, not a limitation I ran into: this protects
 | **Access policy** | An "Application" bound to the hostname, gated by a policy that allows exactly one identity. Every request, from anyone, anywhere, hits this checkpoint first — there is no path that skips it. |
 
 ```yaml
-tunnel: 1ec8cef7-31dc-4441-bf12-3e9163265493
-credentials-file: /home/jagustin/.cloudflared/1ec8cef7-31dc-4441-bf12-3e9163265493.json
-
+# tunnel + credentials-file lines omitted on purpose (not needed to show the pattern)
 ingress:
   - hostname: grafana.jdjagustin-lab.dev
     service: http://localhost:32000
