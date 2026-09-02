@@ -1,5 +1,5 @@
 mongodb:
-  enabled: true  # fixed 2026-09-02: was set to false, causing real drift with ArgoCD (the Application reported Synced even though 'helm template' with these same values renders zero mongo resources) and the live pod was actually running without persistence (its 'data' volume was emptyDir, no PVC) -- with enabled:true the chart falls back to its persistence.enabled:true default and provisions a real PVC. Backup (mongodump) taken before this change; data restored manually into the new pod after the sync.
+  enabled: false  # kept disabled on purpose (see commit abaf034 'Lab: disable Bitnami subchart and deploy custom mongo:4.4.29 for Open5GS'): this cluster deploys its own hand-rolled Mongo via templates/lab-mongodb.yaml instead of the Bitnami subchart, because the Bitnami mongodb image tags this chart pins (e.g. bitnami/mongodb:4.4.15-debian-10-r8) were moved to the unsupported bitnamilegacy registry after Broadcom's Aug 2025 deprecation of free Bitnami images -- re-enabling this subchart would silently duplicate the Deployment/Service already provided by lab-mongodb.yaml. Real persistence for Mongo is provided by a PVC in lab-mongodb.yaml instead (fixed 2026-09-02, see that file).
 hss:
   enabled: true
   resources:

@@ -46,4 +46,19 @@ spec:
               mountPath: /data/db
       volumes:
         - name: data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: lab-open5gs-mongodb
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lab-open5gs-mongodb
+  labels:
+    app: lab-open5gs-mongodb
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 8Gi
