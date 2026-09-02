@@ -1,5 +1,5 @@
 mongodb:
-  enabled: false
+  enabled: true  # fixed 2026-09-02: was set to false, causing real drift with ArgoCD (the Application reported Synced even though 'helm template' with these same values renders zero mongo resources) and the live pod was actually running without persistence (its 'data' volume was emptyDir, no PVC) -- with enabled:true the chart falls back to its persistence.enabled:true default and provisions a real PVC. Backup (mongodump) taken before this change; data restored manually into the new pod after the sync.
 hss:
   enabled: true
   resources:
