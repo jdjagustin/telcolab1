@@ -1,5 +1,5 @@
 mongodb:
-  enabled: false
+  enabled: true  # corregido 2026-09-02: estaba en false, causando drift real con ArgoCD (Application reportaba Synced pero 'helm template' ya no renderizaba el Deployment/Service de Mongo) y ademas el pod real corria sin persistencia (volumen 'data' era emptyDir, sin PVC) -- con enabled:true el chart usa su persistence.enabled:true de default y provisiona un PVC real. Backup (mongodump) tomado antes de este cambio; datos restaurados manualmente despues del sync.
 hss:
   enabled: true
   resources:
