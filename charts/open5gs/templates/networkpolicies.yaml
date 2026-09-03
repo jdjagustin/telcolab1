@@ -1,25 +1,25 @@
-# Fase 2.10 Parte 2 - Microsegmentacion de red (NetworkPolicy) para el namespace open5gs.
+# Phase 2.10 Part 2 - Network microsegmentation (NetworkPolicy) for the open5gs namespace.
 #
-# Filosofia de diseño: default-deny total (ingress + egress) + allow explicito
-# por relacion NF-NF real, usando selectors por label (no IPs de pod fijas) para
-# no romper el descubrimiento dinamico propio de la 5G Core Service-Based
-# Architecture (SBA). Ver la seccion "SBA vs NetworkPolicy" en la documentacion
-# de Fase 2.10 Parte 2 para la justificacion arquitectonica completa.
+# Design philosophy: total default-deny (ingress + egress) + explicit allow
+# per real NF-NF relationship, using label selectors (not fixed pod IPs) so
+# we don't break the dynamic discovery that the 5G Core Service-Based
+# Architecture (SBA) relies on. See the "SBA vs NetworkPolicy" section in
+# the Phase 2.10 Part 2 documentation for the full architectural rationale.
 #
-# Cada relacion de este archivo fue confirmada leyendo la config real de cada NF
-# (ConfigMaps, Deployments, Services) en el cluster -- no se asumio el patron
-# generico de Open5gs. Validado en vivo el 2026-09-02/03 con:
-#   - Caso negativo: un pod sin labels reconocidas no pudo alcanzar SCP, NRF
-#     ni MongoDB (bloqueado por el default-deny).
-#   - Caso positivo: ciclo completo de UERANSIM (registro 5G, autenticacion
-#     5G-AKA, PDU Session, ping real UE->UPF->8.8.8.8, 0% packet loss) con
-#     todas estas politicas activas.
+# Every relationship in this file was confirmed by reading each NF's actual
+# config (ConfigMaps, Deployments, Services) in the cluster -- not assumed
+# from Open5gs's generic architecture. Validated live on 2026-09-02/03 with:
+#   - Negative case: a pod with no recognized labels could not reach SCP,
+#     NRF, or MongoDB (blocked by the default-deny).
+#   - Positive case: full UERANSIM cycle (5G registration, 5G-AKA
+#     authentication, PDU Session, real UE->UPF->8.8.8.8 ping, 0% packet
+#     loss) with all these policies active.
 #
-# Requiere Calico como CNI (Flannel no aplica NetworkPolicy). Ver
-# ANALISIS/instalacion de Calico de esta misma fase.
+# Requires Calico as CNI (Flannel does not enforce NetworkPolicy). See this
+# same phase's Calico installation/analysis.
 
 # ============================================================
-# 0. Default-deny total (ingress + egress) para todo el namespace
+# 0. Total default-deny (ingress + egress) for the whole namespace
 # ============================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -31,7 +31,7 @@ spec:
   - Ingress
   - Egress
 ---
-# 1. DNS para todos los pods (CoreDNS en kube-system)
+# 1. DNS for all pods (CoreDNS in kube-system)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -56,13 +56,13 @@ spec:
 ---
 # ============================================================
 # SBI - Service Based Architecture (indirect via SCP, 3GPP Model D)
-# Confirmado en config real: amf,ausf,bsf,pcf,smf,udm,udr -> solo
-# sbi.client.scp (nrf.enabled=false). nssf -> sbi.client.scp Y ademas
-# sbi.client.nsi apuntando directo a NRF (unico caso ademas de SCP).
-# scp -> solo sbi.client.nrf.
+# Confirmed in the real config: amf,ausf,bsf,pcf,smf,udm,udr -> only have
+# sbi.client.scp (nrf.enabled=false). nssf -> sbi.client.scp AND ALSO
+# sbi.client.nsi pointing straight at NRF (the only case besides SCP).
+# scp -> only sbi.client.nrf.
 # ============================================================
 
-# 2. Consumidores SBI -> egress hacia SCP:7777
+# 2. SBI consumers -> egress to SCP:7777
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -84,8 +84,8 @@ spec:
     - protocol: TCP
       port: 7777
 ---
-# 3. SCP <- ingress de los consumidores SBI (sus requests).
-#    SCP -> egress hacia esos mismos NFs (proxy/forward) + hacia NRF.
+# 3. SCP <- ingress from the SBI consumers (their requests).
+#    SCP -> egress to those same NFs (proxy/forward) + to NRF.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -118,7 +118,7 @@ spec:
     - protocol: TCP
       port: 7777
 ---
-# 4. Los NFs consumidores tambien reciben ingress DESDE SCP (proxy forward)
+# 4. The consumer NFs also receive ingress FROM SCP (proxy forward)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -140,7 +140,7 @@ spec:
     - protocol: TCP
       port: 7777
 ---
-# 5. NSSF -> egress directo a NRF (sbi.client.nsi, bypasea SCP)
+# 5. NSSF -> direct egress to NRF (sbi.client.nsi, bypasses SCP)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -160,7 +160,7 @@ spec:
     - protocol: TCP
       port: 7777
 ---
-# 6. NRF <- ingress solo de SCP y NSSF
+# 6. NRF <- ingress only from SCP and NSSF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -183,15 +183,15 @@ spec:
       port: 7777
 ---
 # ============================================================
-# RAN <-> Core (N2/NGAP y N3/GTP-U)
-# srs-lte = arquitectura in-cluster intencionada (hoy rota/stale).
-# ipBlock 192.168.0.20 (Cloudlab-1) y 10.42.0.1 (bridge cni0 legacy
-# de Flannel, sigue vivo como interfaz local del host) = UERANSIM
-# corriendo fuera del cluster, en el host, que es el simulador
-# realmente validado end-to-end en esta fase.
+# RAN <-> Core (N2/NGAP and N3/GTP-U)
+# srs-lte = the intended in-cluster architecture (currently broken/stale).
+# ipBlock 192.168.0.20 (Cloudlab-1) and 10.42.0.1 (legacy Flannel cni0
+# bridge, still alive as a local host interface) = UERANSIM running
+# outside the cluster, on the host, which is the simulator actually
+# validated end-to-end in this phase.
 # ============================================================
 
-# 7. AMF <- ingress NGAP desde RAN
+# 7. AMF <- ingress NGAP from RAN
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -215,8 +215,8 @@ spec:
     - protocol: SCTP
       port: 38412
 ---
-# 8. UPF <- ingress GTP-U (N3, plano de usuario) desde RAN
-#    UPF <- ingress PFCP (N4) desde SMF
+# 8. UPF <- ingress GTP-U (N3, user plane) from RAN
+#    UPF <- ingress PFCP (N4) from SMF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -247,7 +247,7 @@ spec:
     - protocol: UDP
       port: 8805
 ---
-# 9. srs-lte -> egress hacia AMF y UPF (para cuando se arregle el pod)
+# 9. srs-lte -> egress to AMF and UPF (for whenever the pod gets fixed)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -274,7 +274,7 @@ spec:
     - protocol: UDP
       port: 2152
 ---
-# 10. SMF -> egress PFCP (N4) hacia UPF
+# 10. SMF -> egress PFCP (N4) to UPF
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -296,10 +296,10 @@ spec:
 ---
 # ============================================================
 # 4G EPC: MME <-> SGWC/SMF (GTP-C), SGWU <-> SGWC (PFCP)
-# Confirmado en config real (gtpc.client / pfcp.client de cada NF).
+# Confirmed in the real config (each NF's gtpc.client / pfcp.client).
 # ============================================================
 
-# 11. MME -> egress GTP-C hacia SGWC y SMF (combined-core interworking)
+# 11. MME -> egress GTP-C to SGWC and SMF (combined-core interworking)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -322,7 +322,7 @@ spec:
     - protocol: UDP
       port: 2123
 ---
-# 12. SGWC <- ingress GTP-C desde MME, <- ingress PFCP desde SGWU
+# 12. SGWC <- ingress GTP-C from MME, <- ingress PFCP from SGWU
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -349,7 +349,7 @@ spec:
     - protocol: UDP
       port: 8805
 ---
-# 13. SMF <- ingress GTP-C desde MME (ademas del ingress SBI desde SCP)
+# 13. SMF <- ingress GTP-C from MME (in addition to the SBI ingress from SCP)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -369,7 +369,7 @@ spec:
     - protocol: UDP
       port: 2123
 ---
-# 14. SGWU -> egress PFCP hacia SGWC
+# 14. SGWU -> egress PFCP to SGWC
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -390,9 +390,9 @@ spec:
       port: 8805
 ---
 # ============================================================
-# Diameter: HSS<->MME y PCRF<->SMF, bidireccional -- confirmado
-# por ConnectPeer declarado en AMBOS lados de cada par en su
-# freeDiameter config real (no se asume una sola direccion).
+# Diameter: HSS<->MME and PCRF<->SMF, bidirectional -- confirmed by
+# the ConnectPeer declared on BOTH sides of each pair in their real
+# freeDiameter config (not assuming a single direction).
 # ============================================================
 
 # 15. HSS <-> MME
@@ -510,12 +510,12 @@ spec:
       port: 3868
 ---
 # ============================================================
-# MongoDB: hss, pcf, udr, webui, mongodb-exporter -- confirmado
-# via DB_URI/MONGODB_URI real en cada Deployment (NO estaba en
-# ningun ConfigMap, hubo que revisar env vars directamente).
+# MongoDB: hss, pcf, udr, webui, mongodb-exporter -- confirmed via
+# the real DB_URI/MONGODB_URI on each Deployment (it was NOT in any
+# ConfigMap, had to check the env vars directly).
 # ============================================================
 
-# 17. Consumidores NF (esquema de labels app.kubernetes.io/name)
+# 17. NF consumers (app.kubernetes.io/name label scheme)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -537,7 +537,7 @@ spec:
     - protocol: TCP
       port: 27017
 ---
-# 18. mongodb-exporter (esquema de labels legacy "app=", manifest artesanal)
+# 18. mongodb-exporter (legacy "app=" label scheme, hand-rolled manifest)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -557,7 +557,7 @@ spec:
     - protocol: TCP
       port: 27017
 ---
-# 19. Job populate-epc-subscriber (por si se re-dispara en un futuro upgrade)
+# 19. populate-epc-subscriber Job (in case it re-runs on a future upgrade)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -577,7 +577,7 @@ spec:
     - protocol: TCP
       port: 27017
 ---
-# 20. MongoDB <- ingress de todos sus consumidores reales
+# 20. MongoDB <- ingress from all of its real consumers
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -606,13 +606,13 @@ spec:
       port: 27017
 ---
 # ============================================================
-# Health-checks de kubelet (gotcha real de NetworkPolicy: el
-# trafico de liveness/readiness probe tambien pasa por el CNI y
-# queda sujeto al default-deny si no se permite explicitamente).
-# Confirmado: 11 NFs usan tcpSocket probe en su puerto SBI/http.
+# kubelet health checks (a real NetworkPolicy gotcha: liveness/
+# readiness probe traffic also goes through the CNI and is subject
+# to the default-deny unless explicitly allowed).
+# Confirmed: 11 NFs use a tcpSocket probe on their SBI/http port.
 # ============================================================
 
-# 21. Probes tcpSocket puerto SBI (7777), ambos nodos del cluster
+# 21. tcpSocket probes on the SBI port (7777), both cluster nodes
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -635,7 +635,7 @@ spec:
     - protocol: TCP
       port: 7777
 ---
-# 22. Probe tcpSocket de WebUI (puerto http/9999)
+# 22. WebUI's tcpSocket probe (http port/9999)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
