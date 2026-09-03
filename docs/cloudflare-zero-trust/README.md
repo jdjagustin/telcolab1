@@ -85,9 +85,9 @@ Bypassing the hostname entirely and hitting the node's real service port directl
 This is Part 1 of a two-layer security architecture over the same lab, not an isolated demo:
 
 - **Part 1 (this doc) — perimeter identity.** Who is allowed to even attempt a connection, enforced before traffic reaches the cluster.
-- **Part 2 (in progress) — internal segmentation.** Once traffic is inside the cluster, which pods can talk to which other pods — default-deny `NetworkPolicy` objects in the `open5gs` namespace, explicit NF-to-NF allow rules for the real Open5GS service architecture (AMF↔AUSF, AMF↔SMF, SMF↔UPF via PFCP, and so on). The current CNI (Flannel) doesn't enforce `NetworkPolicy`, so this starts with Calico in policy-only mode. Validated the same way both parts are: a blocked negative case, and a working positive case (real UE registration → 5G-AKA auth → PDU session → traffic) with the policies active — not YAML that merely looks correct.
+- **[Part 2 — internal segmentation](../networkpolicy-microsegmentation/README.md).** Once traffic is inside the cluster, which pods can talk to which other pods — 25 default-deny `NetworkPolicy` objects in the `open5gs` namespace, explicit NF-to-NF allow rules built from the real running configuration (not the generic Open5GS architecture docs). The CNI had to change first (Flannel doesn't enforce `NetworkPolicy`, and Calico's policy-only mode alongside it is broken by a known upstream bug), so this became a full CNI replacement with Calico. Validated the same way both parts are: a blocked negative case, and a working positive case (real UE registration → 5G-AKA auth → PDU session → real ping) with every policy active.
 
-Together they're the two questions any real Zero Trust architecture has to answer: **who gets in**, and **what can talk to what once they're inside.** This document gets updated when Part 2 lands — not before.
+Together they're the two questions any real Zero Trust architecture has to answer: **who gets in**, and **what can talk to what once they're inside.**
 
 ## Reusing this pattern
 
