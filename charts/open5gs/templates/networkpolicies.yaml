@@ -1,0 +1,657 @@
+# Fase 2.10 Parte 2 - Microsegmentacion de red (NetworkPolicy) para el namespace open5gs.
+#
+# Filosofia de diseño: default-deny total (ingress + egress) + allow explicito
+# por relacion NF-NF real, usando selectors por label (no IPs de pod fijas) para
+# no romper el descubrimiento dinamico propio de la 5G Core Service-Based
+# Architecture (SBA). Ver la seccion "SBA vs NetworkPolicy" en la documentacion
+# de Fase 2.10 Parte 2 para la justificacion arquitectonica completa.
+#
+# Cada relacion de este archivo fue confirmada leyendo la config real de cada NF
+# (ConfigMaps, Deployments, Services) en el cluster -- no se asumio el patron
+# generico de Open5gs. Validado en vivo el 2026-09-02/03 con:
+#   - Caso negativo: un pod sin labels reconocidas no pudo alcanzar SCP, NRF
+#     ni MongoDB (bloqueado por el default-deny).
+#   - Caso positivo: ciclo completo de UERANSIM (registro 5G, autenticacion
+#     5G-AKA, PDU Session, ping real UE->UPF->8.8.8.8, 0% packet loss) con
+#     todas estas politicas activas.
+#
+# Requiere Calico como CNI (Flannel no aplica NetworkPolicy). Ver
+# ANALISIS/instalacion de Calico de esta misma fase.
+
+# ============================================================
+# 0. Default-deny total (ingress + egress) para todo el namespace
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+# 1. DNS para todos los pods (CoreDNS en kube-system)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns-egress
+spec:
+  podSelector: {}
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+      podSelector:
+        matchLabels:
+          k8s-app: kube-dns
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+---
+# ============================================================
+# SBI - Service Based Architecture (indirect via SCP, 3GPP Model D)
+# Confirmado en config real: amf,ausf,bsf,pcf,smf,udm,udr -> solo
+# sbi.client.scp (nrf.enabled=false). nssf -> sbi.client.scp Y ademas
+# sbi.client.nsi apuntando directo a NRF (unico caso ademas de SCP).
+# scp -> solo sbi.client.nrf.
+# ============================================================
+
+# 2. Consumidores SBI -> egress hacia SCP:7777
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sbi-clients-egress-to-scp
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [amf, ausf, bsf, pcf, smf, udm, udr, nssf]
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: scp
+    ports:
+    - protocol: TCP
+      port: 7777
+---
+# 3. SCP <- ingress de los consumidores SBI (sus requests).
+#    SCP -> egress hacia esos mismos NFs (proxy/forward) + hacia NRF.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-scp-hub
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: scp
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values: [amf, ausf, bsf, pcf, smf, udm, udr, nssf]
+    ports:
+    - protocol: TCP
+      port: 7777
+  egress:
+  - to:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values: [amf, ausf, bsf, pcf, smf, udm, udr, nssf, nrf]
+    ports:
+    - protocol: TCP
+      port: 7777
+---
+# 4. Los NFs consumidores tambien reciben ingress DESDE SCP (proxy forward)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sbi-targets-ingress-from-scp
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [amf, ausf, bsf, pcf, smf, udm, udr, nssf]
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: scp
+    ports:
+    - protocol: TCP
+      port: 7777
+---
+# 5. NSSF -> egress directo a NRF (sbi.client.nsi, bypasea SCP)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nssf-egress-to-nrf-direct
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nssf
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: nrf
+    ports:
+    - protocol: TCP
+      port: 7777
+---
+# 6. NRF <- ingress solo de SCP y NSSF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-nrf-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: nrf
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values: [scp, nssf]
+    ports:
+    - protocol: TCP
+      port: 7777
+---
+# ============================================================
+# RAN <-> Core (N2/NGAP y N3/GTP-U)
+# srs-lte = arquitectura in-cluster intencionada (hoy rota/stale).
+# ipBlock 192.168.0.20 (Cloudlab-1) y 10.42.0.1 (bridge cni0 legacy
+# de Flannel, sigue vivo como interfaz local del host) = UERANSIM
+# corriendo fuera del cluster, en el host, que es el simulador
+# realmente validado end-to-end en esta fase.
+# ============================================================
+
+# 7. AMF <- ingress NGAP desde RAN
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-amf-ingress-ran
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: amf
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: srs-lte
+    - ipBlock:
+        cidr: 192.168.0.20/32
+    - ipBlock:
+        cidr: 10.42.0.1/32
+    ports:
+    - protocol: SCTP
+      port: 38412
+---
+# 8. UPF <- ingress GTP-U (N3, plano de usuario) desde RAN
+#    UPF <- ingress PFCP (N4) desde SMF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-upf-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: upf
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: srs-lte
+    - ipBlock:
+        cidr: 192.168.0.20/32
+    - ipBlock:
+        cidr: 10.42.0.1/32
+    ports:
+    - protocol: UDP
+      port: 2152
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: smf
+    ports:
+    - protocol: UDP
+      port: 8805
+---
+# 9. srs-lte -> egress hacia AMF y UPF (para cuando se arregle el pod)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-srs-lte-egress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: srs-lte
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: amf
+    ports:
+    - protocol: SCTP
+      port: 38412
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: upf
+    ports:
+    - protocol: UDP
+      port: 2152
+---
+# 10. SMF -> egress PFCP (N4) hacia UPF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-smf-egress-pfcp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: smf
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: upf
+    ports:
+    - protocol: UDP
+      port: 8805
+---
+# ============================================================
+# 4G EPC: MME <-> SGWC/SMF (GTP-C), SGWU <-> SGWC (PFCP)
+# Confirmado en config real (gtpc.client / pfcp.client de cada NF).
+# ============================================================
+
+# 11. MME -> egress GTP-C hacia SGWC y SMF (combined-core interworking)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mme-egress-gtpc
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mme
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: sgwc
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: smf
+    ports:
+    - protocol: UDP
+      port: 2123
+---
+# 12. SGWC <- ingress GTP-C desde MME, <- ingress PFCP desde SGWU
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sgwc-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sgwc
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: mme
+    ports:
+    - protocol: UDP
+      port: 2123
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: sgwu
+    ports:
+    - protocol: UDP
+      port: 8805
+---
+# 13. SMF <- ingress GTP-C desde MME (ademas del ingress SBI desde SCP)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-smf-ingress-gtpc-from-mme
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: smf
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: mme
+    ports:
+    - protocol: UDP
+      port: 2123
+---
+# 14. SGWU -> egress PFCP hacia SGWC
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-sgwu-egress-pfcp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sgwu
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: sgwc
+    ports:
+    - protocol: UDP
+      port: 8805
+---
+# ============================================================
+# Diameter: HSS<->MME y PCRF<->SMF, bidireccional -- confirmado
+# por ConnectPeer declarado en AMBOS lados de cada par en su
+# freeDiameter config real (no se asume una sola direccion).
+# ============================================================
+
+# 15. HSS <-> MME
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-diameter-hss
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: hss
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: mme
+    ports:
+    - protocol: SCTP
+      port: 3868
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: mme
+    ports:
+    - protocol: SCTP
+      port: 3868
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-diameter-mme
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mme
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: hss
+    ports:
+    - protocol: SCTP
+      port: 3868
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: hss
+    ports:
+    - protocol: SCTP
+      port: 3868
+---
+# 16. PCRF <-> SMF
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-diameter-pcrf
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: pcrf
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: smf
+    ports:
+    - protocol: SCTP
+      port: 3868
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: smf
+    ports:
+    - protocol: SCTP
+      port: 3868
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-diameter-smf-to-pcrf
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: smf
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: pcrf
+    ports:
+    - protocol: SCTP
+      port: 3868
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: pcrf
+    ports:
+    - protocol: SCTP
+      port: 3868
+---
+# ============================================================
+# MongoDB: hss, pcf, udr, webui, mongodb-exporter -- confirmado
+# via DB_URI/MONGODB_URI real en cada Deployment (NO estaba en
+# ningun ConfigMap, hubo que revisar env vars directamente).
+# ============================================================
+
+# 17. Consumidores NF (esquema de labels app.kubernetes.io/name)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mongo-clients-nf-egress
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [hss, pcf, udr, webui]
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: lab-open5gs-mongodb
+    ports:
+    - protocol: TCP
+      port: 27017
+---
+# 18. mongodb-exporter (esquema de labels legacy "app=", manifest artesanal)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mongo-exporter-egress
+spec:
+  podSelector:
+    matchLabels:
+      app: mongodb-exporter
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: lab-open5gs-mongodb
+    ports:
+    - protocol: TCP
+      port: 27017
+---
+# 19. Job populate-epc-subscriber (por si se re-dispara en un futuro upgrade)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-populate-job-egress
+spec:
+  podSelector:
+    matchLabels:
+      job-name: lab-open5gs-populate-epc-subscriber
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: lab-open5gs-mongodb
+    ports:
+    - protocol: TCP
+      port: 27017
+---
+# 20. MongoDB <- ingress de todos sus consumidores reales
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mongo-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app: lab-open5gs-mongodb
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchExpressions:
+        - key: app.kubernetes.io/name
+          operator: In
+          values: [hss, pcf, udr, webui]
+    - podSelector:
+        matchLabels:
+          app: mongodb-exporter
+    - podSelector:
+        matchLabels:
+          job-name: lab-open5gs-populate-epc-subscriber
+    ports:
+    - protocol: TCP
+      port: 27017
+---
+# ============================================================
+# Health-checks de kubelet (gotcha real de NetworkPolicy: el
+# trafico de liveness/readiness probe tambien pasa por el CNI y
+# queda sujeto al default-deny si no se permite explicitamente).
+# Confirmado: 11 NFs usan tcpSocket probe en su puerto SBI/http.
+# ============================================================
+
+# 21. Probes tcpSocket puerto SBI (7777), ambos nodos del cluster
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubelet-probes-sbi
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values: [amf, ausf, bsf, nrf, nssf, pcf, scp, smf, udm, udr]
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 192.168.0.20/32
+    - ipBlock:
+        cidr: 192.168.0.17/32
+    ports:
+    - protocol: TCP
+      port: 7777
+---
+# 22. Probe tcpSocket de WebUI (puerto http/9999)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubelet-probes-webui
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: webui
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 192.168.0.20/32
+    - ipBlock:
+        cidr: 192.168.0.17/32
+    ports:
+    - protocol: TCP
+      port: 9999
