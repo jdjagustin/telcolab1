@@ -1,18 +1,10 @@
-# Runbook — API/Webhook/ETL (Fase 2.12), ejecución real contra el lab
+# Runbook — API/Webhook/ETL pipeline, live execution against the lab
 
-**Nota importante:** este chat corre en la nube y no tiene alcance de red
-hacia `192.168.0.20` (Cloudlab-1) ni `192.168.0.17` (CloudSpartan) — no puedo
-correr nada por ti dentro de tu LAN. Todo el código ya está listo en esta
-carpeta; los pasos de abajo los corres tú vía NoMachine. Pégame la salida de
-cada paso conforme avances y documentamos la evidencia real.
+**Context:** this runbook was written for execution from a cloud session that has no network reach into the lab's LAN (it can't reach the 5G core node or the receiver host directly). All the code lives in this folder; the steps below are run by hand, on the lab machines themselves, over the local network.
 
-**Orden de prioridad para tus 2 horas — no te saltes esto:** el JD de Stripe
-pide SQL/APIs/Webhooks/ETL, no EC2 ni NoSQL. Si el tiempo aprieta, el corte
-mínimo viable que sí cuenta para el CV es **Pasos 1–5**. EC2 (Paso 6) y
-DynamoDB (Paso 7) son extensiones — actívalas solo si sobra tiempo, y si algo
-no calza rápido en esos dos, ábandalos sin culpa y quédate con lo ya validado.
+**Suggested order:** Steps 1–5 are the core path — everything needed to validate the pipeline end-to-end (signed webhook in, aggregate SQL out). Steps 6 and 7 are optional extensions; skip them if time is short, since the validation from Steps 1–5 already stands on its own.
 
-Secreto compartido (defínelo una sola vez, mismo valor en ambas máquinas):
+Shared secret (set once, same value on both machines):
 
 ```
 export WEBHOOK_SECRET="webhook-secret-xxx"
@@ -20,20 +12,20 @@ export WEBHOOK_SECRET="webhook-secret-xxx"
 
 ---
 
-## 1) CloudSpartan — RDS real vía Floci (Postgres)
+## 1) Receiver host — provision RDS-compatible PostgreSQL via the local cloud emulator
 
 ```
-cd ~/webhook-etl-lab   # copia esta carpeta aquí
+cd ~/webhook-etl-lab   # copy this folder here
 bash rds_setup.sh
 ```
 
-Copia el `Endpoint.Address` y `Endpoint.Port` que te regrese `describe-db-instances`, y define:
+Copy the `Endpoint.Address` and `Endpoint.Port` returned by `describe-db-instances`, and set:
 
 ```
 export PG_DSN="host=<Address> port=<Port> dbname=noc user=postgres password=passwordxxx"
 ```
 
-Crea la tabla:
+Create the table:
 
 ```
 psql "$PG_DSN" -c "
@@ -49,9 +41,9 @@ CREATE TABLE IF NOT EXISTS pdu_sessions (
 );"
 ```
 
-Si `describe-db-instances` no trae el Endpoint a la primera, espera unos segundos y vuelve a correrlo — el contenedor real de Postgres tarda un poco en levantar.
+If `describe-db-instances` doesn't return the endpoint right away, wait a few seconds and re-run it — the underlying Postgres container takes a moment to come up.
 
-## 2) CloudSpartan — arrancar el webhook receiver (Plan A: proceso normal)
+## 2) Receiver host — start the webhook receiver (Plan A: plain process)
 
 ```
 python3 -m venv venv && source venv/bin/activate
@@ -64,70 +56,70 @@ export BUCKET="open5gs-noc-reports"
 uvicorn webhook_receiver:app --host 0.0.0.0 --port 8000
 ```
 
-Déjalo corriendo en esa terminal (o `screen`/`tmux`). Esta es la vía garantizada — si más adelante el Paso 6 (EC2) funciona, lo sustituyes; si no, esto ya es evidencia real y suficiente.
+Leave it running in that terminal (or under `screen`/`tmux`). This is the reliable path — if Step 6 (running it inside a real emulated EC2 instance) works out later, swap it in; otherwise this is already sufficient, real validation on its own.
 
-## 3) Cloudlab-1 — correr el producer (evento real + caso negativo)
+## 3) 5G core node — run the producer (real event + negative case)
 
-En otra terminal, en Cloudlab-1 (tiene `kubectl`):
+In another terminal, on the node with `kubectl` access:
 
 ```
 cd ~/webhook-etl-lab
 python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 
-export WEBHOOK_SECRET="webhook-secret-xxx"   # MISMO valor que en el receiver
+export WEBHOOK_SECRET="webhook-secret-xxx"   # SAME value as the receiver
 export WEBHOOK_URL="http://192.168.0.17:8000/webhook"
 
 python3 producer.py --negative-test
 ```
 
-Salida esperada: `200` para el evento con firma válida, `401` para el de firma inválida. Si el regex de logs del SMF no encuentra nada, corre una sesión de UERANSIM primero, o pégame 20-30 líneas de `kubectl logs -n open5gs <pod-smf> --tail 200` y ajustamos el patrón.
+Expected output: `200` for the correctly signed event, `401` for the deliberately corrupted one. If the SMF log regex doesn't match anything, run a UERANSIM session first to generate a fresh PDU session log line, or grab 20–30 lines of `kubectl logs -n open5gs <smf-pod> --tail 200` to check the log format against the pattern in `producer.py`.
 
-## 4) CloudSpartan — correr el ETL contra el RDS real
+## 4) Receiver host — run the ETL against the real database
 
 ```
 export FLOCI_ENDPOINT="http://localhost:4566"
 export BUCKET="open5gs-noc-reports"
-# PG_DSN ya lo tienes del paso 1
+# PG_DSN is already set from step 1
 
 python3 etl.py
 ```
 
-Debe imprimir: total de sesiones, agregación por UE, y el cargo simulado por MB.
+Expected output: total session count, per-subscriber aggregation, and the simulated per-MB usage charge.
 
-## 5) Validación negativa a nivel de datos
+## 5) Data-level negative validation
 
 ```
 aws --endpoint-url=http://localhost:4566 s3 ls s3://open5gs-noc-reports/events/
 psql "$PG_DSN" -c "SELECT id FROM pdu_sessions;"
 ```
 
-`evt_negative_test` no debe aparecer en ninguno de los dos. **Con esto cerrado, ya tienes el criterio de éxito mínimo — si el tiempo se acaba aquí, ya hay evidencia real y honesta que cuenta para el CV.**
+`evt_negative_test` should not appear in either output. **With this confirmed, the pipeline is validated end-to-end** — the forged-signature event never reached storage or the database.
 
 ---
 
-## 6) (Opcional/stretch) CloudSpartan — receiver dentro de un EC2 real de Floci
+## 6) (Optional/stretch) Receiver host — run the receiver inside a real emulated EC2 instance
 
-Solo si sobra tiempo. Según la documentación de Floci, `RunInstances` levanta contenedores Docker reales con UserData e IMDS — es cómputo real, no solo metadata. **No pude probarlo yo mismo** (sin alcance de red a tu LAN), así que trátalo como experimental:
+Only worth doing if there's time to spare. According to the local cloud emulator's documentation, `RunInstances` spins up real Docker containers with UserData and an IMDS endpoint — actual compute, not just metadata. This path hasn't been exercised end-to-end yet, so treat it as experimental:
 
 ```
 bash ec2_deploy.sh
 ```
 
-Revisa el resultado con `docker ps` / `docker logs <id>` en CloudSpartan, y ajusta `WEBHOOK_URL` en el producer si logras exponer el puerto del contenedor hacia la LAN. Si algo no calza con la sintaxis exacta (el `--image-id` es un placeholder), revisa `https://floci.io/aws/` o `https://github.com/floci-io/floci` antes de perder tiempo adivinando flags — y si en 15-20 minutos no cuaja, ábandonalo: el Paso 2 (Plan A) ya es evidencia válida por sí sola.
+Check the result with `docker ps` / `docker logs <id>` on the receiver host, and adjust `WEBHOOK_URL` in the producer if you expose the container's port to the LAN. If the exact syntax doesn't line up (the `--image-id` in the script is a placeholder), check the emulator's own documentation before guessing at flags — and if it doesn't come together quickly, drop it: Step 2 (Plan A) already stands as valid evidence on its own.
 
-## 7) (Opcional/stretch) CloudSpartan — landing paralelo en DynamoDB
+## 7) (Optional/stretch) Receiver host — parallel landing in DynamoDB
 
-Solo si sobra tiempo, y ya con 1–5 validados. No cierra el gap de SQL del JD (es NoSQL), es puro enriquecimiento:
+Only worth doing once Steps 1–5 are validated. This is a pure enrichment exercise — it doesn't replace the relational/SQL path above, it just mirrors the same events into a NoSQL store in parallel:
 
 ```
 bash dynamodb_setup.sh
 export ENABLE_DYNAMODB=true
 export DYNAMO_TABLE=pdu_sessions_raw
-# reinicia el receiver (Ctrl+C y vuelve a correr uvicorn) con esas variables activas
+# restart the receiver (Ctrl+C, then re-run uvicorn) with these variables set
 ```
 
-Vuelve a correr el producer (paso 3) y verifica:
+Re-run the producer (step 3) and check:
 
 ```
 aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name pdu_sessions_raw
@@ -135,11 +127,9 @@ aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name pdu_sessions
 
 ---
 
-## Evidencia que necesitamos para el criterio de éxito (mínimo: pasos 1–5)
+## Checklist — what a full validation run should produce
 
-- Output del paso 3 (POST positivo 200 + POST negativo 401).
-- Output del paso 4 (queries con datos reales contra el RDS real de Floci).
-- Output del paso 5 (confirmando que el caso negativo no llegó a S3 ni a la tabla).
-- Si llegaste a 6 y/o 7: lo que hayas logrado documentar, sin forzarlo si no cuajó a tiempo.
-
-Con 1–5 cerrado se agrega la historia nueva al banco de CV y el bullet de Stripe — aunque sea con margen justo antes de la llamada con Pierce.
+- Output of step 3 (positive `200` POST + negative `401` POST).
+- Output of step 4 (aggregate queries returning real data from the emulator's RDS-backed Postgres).
+- Output of step 5 (confirming the negative case never reached S3 or the table).
+- If steps 6 and/or 7 were attempted: whatever got documented there, without forcing it if it didn't come together in time.
