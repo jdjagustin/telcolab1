@@ -525,7 +525,7 @@ spec:
     matchExpressions:
     - key: app.kubernetes.io/name
       operator: In
-      values: [hss, pcf, udr, webui]
+      values: [hss, pcf, udr, webui, pcrf]
   policyTypes:
   - Egress
   egress:
@@ -594,7 +594,7 @@ spec:
         matchExpressions:
         - key: app.kubernetes.io/name
           operator: In
-          values: [hss, pcf, udr, webui]
+          values: [hss, pcf, udr, webui, pcrf]
     - podSelector:
         matchLabels:
           app: mongodb-exporter
