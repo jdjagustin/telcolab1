@@ -1,6 +1,6 @@
 # Self-Hosted 5G/4G Core Lab — Bare-Metal Kubernetes, GitOps-Managed
 
-A personal home lab running a full open-source mobile core end-to-end on repurposed hardware: a 2-node bare-metal Kubernetes cluster hosting both a 5G Core (Service-Based Architecture) and a 4G EPC in interworking mode, deployed and continuously reconciled via GitOps, with its own container registry, a full observability stack, and — layered on top — real network microsegmentation, validated against an independent breach-and-attack-simulation tool.
+A cloud-native mobile core network, built end-to-end on standards-based infrastructure: a Kubernetes platform following CNCF cloud-native patterns (GitOps delivery, declarative infrastructure, service-based networking) hosting a 3GPP-compliant 5G Core (Service-Based Architecture) interworking with a 4G EPC — deployed on a bare-metal cluster, with its own container registry, a full observability stack, and, layered on top, real network microsegmentation validated against an independent breach-and-attack-simulation tool.
 
 This README documents the platform itself. The security work built on top of it is documented separately (see [Related projects](#related-projects) below).
 
@@ -16,7 +16,7 @@ This README documents the platform itself. The security work built on top of it 
 
 ## Why build this
 
-Most hands-on Kubernetes/GitOps portfolios are built on generic web workloads. This lab exists to get the same operational experience — GitOps delivery, observability, network security — against a workload that actually behaves like a telecom network: real signaling protocols (NGAP, PFCP, GTP, Diameter), a real Service-Based Architecture with dynamic NF discovery, and real 4G/5G interworking, not a simplified stand-in for it.
+Most hands-on Kubernetes/GitOps portfolios are built on generic web workloads. This project exists to get the same operational experience — GitOps delivery, observability, network security — against a workload that follows real standards on both sides of the stack: 3GPP-defined signaling (NGAP, PFCP, GTP, Diameter) and a Service-Based Architecture with dynamic NF discovery on the telecom side, and CNCF-defined cloud-native patterns (Kubernetes-native orchestration, GitOps continuous delivery) on the platform side — not simplified stand-ins for either.
 
 ## Architecture
 
