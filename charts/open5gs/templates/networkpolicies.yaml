@@ -655,3 +655,40 @@ spec:
     ports:
     - protocol: TCP
       port: 9999
+
+---
+# 23. EPC NFs' probes on their signaling ports (Diameter/S1AP/GTPv2-C/PFCP/GTP-U), both cluster nodes
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kubelet-probes-epc
+spec:
+  podSelector:
+    matchExpressions:
+    - key: app.kubernetes.io/name
+      operator: In
+      values:
+      - hss
+      - mme
+      - pcrf
+      - sgwc
+      - sgwu
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - ipBlock:
+        cidr: 192.168.0.20/32
+    - ipBlock:
+        cidr: 192.168.0.17/32
+    ports:
+    - protocol: SCTP
+      port: 3868
+    - protocol: SCTP
+      port: 36412
+    - protocol: UDP
+      port: 2123
+    - protocol: UDP
+      port: 8805
+    - protocol: UDP
+      port: 2152
