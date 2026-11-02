@@ -49,7 +49,7 @@ This is a working lab, not a finished product, and it's documented that way:
 
 - 4G radio simulation (via srsRAN) is not functional yet — the 4G EPC Network Functions are deployed and interworking with the 5G side, but there's no live 4G RAN test today, only the 5G RAN path via UERANSIM.
 - The two nodes run different k3s versions and have different CPU capabilities (one lacks a newer CPU instruction set that some container images require) — worked around today by being deliberate about which workloads land on which node, with version homogenization as known follow-up work.
-- MongoDB runs `mongod` directly as uid/gid 999 (the image's `mongodb` user) rather than through the image's default `gosu`-based entrypoint. After a node update in late 2026-10, `gosu` hung before exec'ing `mongod` (`setpriv` from the same image worked), leaving the pod `Running` with nothing listening on 27017 and every NF that needs subscriber data failing. The Deployment has no readiness/liveness probes yet, so that state was invisible to Kubernetes; adding a TCP probe on 27017 is known follow-up work.
+- MongoDB runs `mongod` directly as uid/gid 999 (the image's `mongodb` user) rather than through the image's default `gosu`-based entrypoint. Around a node update in late 2026-10 (exact trigger not confirmed), `gosu` hung before exec'ing `mongod` (`setpriv` from the same image worked), leaving the pod `Running` with nothing listening on 27017 and every NF that needs subscriber data failing. The Deployment has no readiness/liveness probes yet, so that state was invisible to Kubernetes; adding a TCP probe on 27017 is known follow-up work.
 
 ## Related projects
 

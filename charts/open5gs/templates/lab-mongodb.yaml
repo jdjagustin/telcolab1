@@ -31,8 +31,9 @@ spec:
     spec:
       # Run mongod directly as the image's built-in `mongodb` user (uid/gid 999)
       # instead of the default entrypoint, which starts as root and drops
-      # privileges with `gosu`. On 2026-11-02 `gosu` hung before exec on both
-      # nodes, so mongod never started while the pod still reported Running.
+      # privileges with `gosu`. On 2026-11-02 `gosu` was observed hanging inside the
+      # container before exec, so mongod never started while the pod still
+      # reported Running.
       securityContext:
         runAsUser: 999
         runAsGroup: 999
