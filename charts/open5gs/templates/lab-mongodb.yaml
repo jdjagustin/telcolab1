@@ -29,10 +29,19 @@ spec:
       labels:
         app: lab-open5gs-mongodb
     spec:
+      # Run mongod directly as the image's built-in `mongodb` user (uid/gid 999)
+      # instead of the default entrypoint, which starts as root and drops
+      # privileges with `gosu`. On 2026-11-02 `gosu` hung before exec on both
+      # nodes, so mongod never started while the pod still reported Running.
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
       containers:
         - name: mongodb
           image: mongo:4.4.29
           imagePullPolicy: IfNotPresent
+          command:
+            - mongod
           args:
             - "--bind_ip_all"
           env:
