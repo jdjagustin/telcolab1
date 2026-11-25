@@ -49,7 +49,20 @@ This is a working lab, not a finished product, and it's documented that way:
 
 - 4G radio simulation (via srsRAN) is not functional yet — the 4G EPC Network Functions are deployed and interworking with the 5G side, but there's no live 4G RAN test today, only the 5G RAN path via UERANSIM.
 - The two nodes run different k3s versions and have different CPU capabilities (one lacks a newer CPU instruction set that some container images require) — worked around today by being deliberate about which workloads land on which node, with version homogenization as known follow-up work.
-- MongoDB runs `mongod` directly as uid/gid 999 (the image's `mongodb` user) rather than through the image's default `gosu`-based entrypoint. Around a node update in late 2026-10 (exact trigger not confirmed), `gosu` hung before exec'ing `mongod` (`setpriv` from the same image worked), leaving the pod `Running` with nothing listening on 27017 and every NF that needs subscriber data failing. The Deployment has no readiness/liveness probes yet, so that state was invisible to Kubernetes; adding a TCP probe on 27017 is known follow-up work.
+- MongoDB runs `mongod` directly as uid/gid 999 (the image's `mongodb` user) rather than through the image's default `gosu`-based entrypoint. Around a node update in late 2026-10 (which updated package changed the behavior is not confirmed), `gosu` hung before exec'ing `mongod` (`setpriv` from the same image worked); the cause is the AppArmor behavior described in [Known issue](#known-issue-default-apparmor-profile-blocks-signals-inside-a-container) below. That left the pod `Running` with nothing listening on 27017 and every NF that needs subscriber data failing. The Deployment has no readiness/liveness probes yet, so that state was invisible to Kubernetes; adding a TCP probe on 27017 is known follow-up work.
+
+## Known issue: default AppArmor profile blocks signals inside a container
+
+Observed 2026-11-25 on both nodes (Ubuntu 26.04.1; kernel 7.0.0-44 confirmed on the control-plane node), after OS updates:
+
+- **Symptom.** Containers that start as root and call `gosu` (the official `mongo` and `postgres` images) never reach their main process: `gosu` sits at ~100% of one core, spinning on `sched_yield` (`strace -c`). Separately, PostgreSQL, even running directly as uid 999, waited ~299 s at startup, or hung in its first client connection, instead of starting in about a second.
+- **Cause.** The default containerd AppArmor profile (`cri-containerd.apparmor.d`) is being applied stacked with `unconfined` (`cri-containerd.apparmor.d//&unconfined`), and the kernel log shows `DENIED` for signals between processes of the same container (`comm="gosu"`: `rtmin+1`; `comm="postgres"`: `urg`, `term`, `usr1`). `gosu` (a Go program) and PostgreSQL appear to depend on those signals, which is consistent with the hangs but not proven at the code level. The exact profile text and which package update introduced the stacking were not verified.
+- **Evidence.** Controlled tests on `postgres:18` (same image, same node, `emptyDir`): root + `gosu` + default profile spins; root + `gosu` + `Unconfined` starts in under 30 s; uid 999 + default profile hangs; uid 999 + `Unconfined` starts in under 30 s. On the real Harbor database, with the same volume, startup to "ready to accept connections" dropped from ~299 s to ~1.3 s with `Unconfined`.
+- **Mitigations in this repo.**
+  - MongoDB runs as uid/gid 999 so `gosu` is never called (see above).
+  - The Harbor database container carries the pod annotation `container.apparmor.security.beta.kubernetes.io/database: unconfined` (`argocd/apps/harbor-app.yaml`, `database.podAnnotations`).
+- **Trade-off.** `Unconfined` removes AppArmor confinement for that one container only; namespaces, cgroups and capabilities still apply. It is deliberately not used on workloads in a compliance-sensitive zone.
+- **Caveats.** The annotation is deprecated since Kubernetes 1.30 (it works on the control-plane node's kubelet, v1.33.6; whether the worker's newer kubelet still honors it is untested here, and the Harbor database is pinned to the control-plane node). Remove it once a node-level fix (extending the profile to allow signals to the stacked label) or an upstream patch lands. Other pods may be affected: `DENIED` events so far only name `mongo` (probe processes) and `postgres`.
 
 ## Related projects
 
@@ -65,4 +78,5 @@ This is a working lab, not a finished product, and it's documented that way:
 - [ArgoCD](https://argo-cd.readthedocs.io/) — GitOps continuous delivery.
 - [UERANSIM](https://github.com/aligungr/UERANSIM) — open-source 5G UE/RAN simulator.
 - [Harbor](https://goharbor.io/) — self-hosted container registry.
+- [Kubernetes AppArmor](https://kubernetes.io/docs/tutorials/security/apparmor/) and [gosu](https://github.com/tianon/gosu) — background for the known issue above.
 - [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts) and [Loki](https://grafana.com/oss/loki/) — observability.
