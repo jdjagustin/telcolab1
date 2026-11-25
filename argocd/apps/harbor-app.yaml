@@ -136,6 +136,15 @@ spec:
             limits: { cpu: "1", memory: 1Gi }
 
         database:
+          # AppArmor workaround (see docs/5g-4g-core-lab/README.md, "Known issue"):
+          # on the current node OS the default containerd AppArmor profile denies
+          # signals between processes of the same container (stacked label
+          # "//&unconfined"), so PostgreSQL waited ~299 s at startup instead of
+          # ~1.3 s. Unconfined applies to this one container only (database).
+          # The annotation is deprecated since Kubernetes 1.30; remove it when a
+          # node-level fix or upstream patch lands.
+          podAnnotations:
+            container.apparmor.security.beta.kubernetes.io/database: unconfined
           internal:
             nodeSelector:
               kubernetes.io/hostname: cloudlab-1
