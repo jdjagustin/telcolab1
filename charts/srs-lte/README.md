@@ -29,6 +29,7 @@ SRSLte enodeb + ue.
 | image.registry | string | `"docker.io"` |  |
 | image.repository | string | `"openverso/srsran"` |  |
 | image.tag | string | `"22_04_1"` |  |
+| replicaCount | int | `1` | Number of srsRAN pods; `0` keeps the release installed but stopped |
 | ue.imei | string | `"353490069873319"` |  |
 | ue.imsi | string | `"999700000000001"` |  |
 | ue.k | string | `"465B5CE8B199B49FAA5F0A2EE238A6BC"` |  |

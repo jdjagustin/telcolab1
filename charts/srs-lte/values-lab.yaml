@@ -1,3 +1,6 @@
+# Stopped on purpose in this lab to free RAM.
+# Set to 1 to run the 4G RAN simulation again.
+replicaCount: 0
 image:
   registry: harbor.lab.local
   repository: library/srsran

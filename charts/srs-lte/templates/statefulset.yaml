@@ -5,7 +5,7 @@ metadata:
   labels:
 {{ include "srslte.labels.standard" . | nindent 4 }}
 spec:
-  replicas: 1 
+  replicas: {{ .Values.replicaCount }}
   serviceName: {{ include "srslte.fullname" . }}
   selector:
     matchLabels:

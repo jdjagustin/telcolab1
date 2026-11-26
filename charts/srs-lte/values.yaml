@@ -1,3 +1,6 @@
+## Number of srsRAN pods (eNB + UE simulator). 0 keeps the release installed but stopped.
+replicaCount: 1
+
 image:
   registry: docker.io
   repository: openverso/srsran
